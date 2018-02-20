@@ -6,6 +6,6 @@ Supplementary for Adversarial Examples Workshop
 * cleverhans_cifar10.py: Change dataset and target model. Visualization
 * cleverhans_tune_param.py: Different parameters in same attack method
 
-### Visualization:
+### Visualization
 * array_to_image.py
 * tutorial_array_to_image.py
