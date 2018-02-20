@@ -15,4 +15,4 @@ array_to_image(adv_image[0:5], "adv_image_FGM")
 
 # visualization for Cifar-10's adversarial examples
 adv_image = np.load("adv_image_FGM_cifar10.npy")
-array_to_image(adv_image[0:5], "adv_image_cifar10", channel = 3, size = 32)
+array_to_image(adv_image[0:5], "adv_image_cifar10", channels = 3, size = 32)
