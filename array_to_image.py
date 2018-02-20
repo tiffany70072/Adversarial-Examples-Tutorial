@@ -13,11 +13,11 @@ def array_to_image(arr, image_filename, channels = 1, size = 28, normalized = Tr
 
     for index in range(rows):
         a = arr[index]
-        if channel == 3:
+        if channels == 3:
             r = Image.fromarray(a[0] * n).convert('L')
             g = Image.fromarray(a[1] * n).convert('L')
             b = Image.fromarray(a[2] * n).convert('L')
-        elif channel == 1:
+        elif channels == 1:
             r = Image.fromarray(a[0] * n).convert('L') 
             g = r
             b = r
