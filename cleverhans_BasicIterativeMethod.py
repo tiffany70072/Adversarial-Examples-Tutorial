@@ -44,16 +44,21 @@ def cnn_model_BIM(logits=False, input_ph=None, img_rows=28, img_cols=28,
             Conv2D(nb_filters, (3, 3), strides = (1, 1), padding="valid"),
             Activation('relu'),
             MaxPooling2D(pool_size=(2, 2)),
+            #Dropout(0.25),
 
             Conv2D(nb_filters*2, (3, 3), strides = (1, 1), padding="valid"),
             Activation('relu'),
+            #MaxPooling2D(pool_size=(2, 2)),
+            #Dropout(0.25),
             Conv2D(nb_filters*2, (3, 3), strides = (1, 1), padding="valid"),
             Activation('relu'),
             MaxPooling2D(pool_size=(2, 2)),
+            #Dropout(0.25),
 
             Flatten(),
             Dense(200, activation='relu'),
             Dense(200, activation='relu'),
+            #Dropout(0.5),
             Dense(nb_classes)]
 
     for layer in layers: model.add(layer)
@@ -65,7 +70,7 @@ def cnn_model_BIM(logits=False, input_ph=None, img_rows=28, img_cols=28,
     else: return model
 
 def mnist_tutorial(train_start=0, train_end=60000, test_start=0,
-                   test_end=10000, nb_epochs=6, batch_size=128, epsilon = 0.3,
+                   test_end=10000, nb_epochs=6, batch_size=128,
                    learning_rate=0.001, train_dir="/tmp",
                    filename="mnist.ckpt", load_model=False,
                    testing=False):
@@ -143,6 +148,11 @@ def mnist_tutorial(train_start=0, train_end=60000, test_start=0,
     }
     ckpt = tf.train.get_checkpoint_state(train_dir)
     ckpt_path = False if ckpt is None else ckpt.model_checkpoint_path
+    #print("train_dir:", train_dir)
+    #print("ckpt:", ckpt)
+    print("ckpt_path:", ckpt_path)
+    print("load_model:", load_model)
+    #ckpt_path = False
 
     rng = np.random.RandomState([2017, 8, 30])
     if load_model and ckpt_path:
@@ -155,65 +165,117 @@ def mnist_tutorial(train_start=0, train_end=60000, test_start=0,
         model_train(sess, x, y, preds, X_train, Y_train, evaluate=evaluate,
                     args=train_params, save=False, rng=rng)
 
-    # Calculate training error
+    '''# Calculate training error
     if testing:
         eval_params = {'batch_size': batch_size}
         acc = model_eval(sess, x, y, preds, X_train, Y_train, args=eval_params)
-        report.train_clean_train_clean_eval = acc
+        report.train_clean_train_clean_eval = acc'''
 
-    # Initialize the attack object and graph
+    # Initialize the Fast Gradient Sign Method (FGSM) attack object and graph
     wrap = KerasModelWrapper(model)
-    bim = BasicIterativeMethod(wrap, sess=sess)
-    fgsm_params = {'eps': epsilon,
-                    'clip_min': 0.,
-                    'clip_max': 1.}
-    adv_x = bim.generate(x, **fgsm_params)
-    # Consider the attack to be constant
-    adv_x = tf.stop_gradient(adv_x)
-    preds_adv = model(adv_x)
 
-    # Evaluate the accuracy of the MNIST model on adversarial examples
-    eval_par = {'batch_size': batch_size}
-    acc = model_eval(sess, x, y, preds_adv, X_test, Y_test, args=eval_par)
-    print('Test accuracy on adversarial examples: %0.4f\n' % acc)
-    report.clean_train_adv_eval = acc
+    print("FastGradientMethod")
+    fgsm1 = FastGradientMethod(wrap, sess=sess)
+    for epsilon in [0.005, 0.01, 0.05, 0.1, 0.5, 1.0]:
+        print("Epsilon =", epsilon),
+        fgsm_params = {'eps': epsilon,
+                       'clip_min': None,
+                       'clip_max': None}
+        adv_x = fgsm1.generate(x, **fgsm_params)
+        # Consider the attack to be constant
+        adv_x = tf.stop_gradient(adv_x)
+        preds_adv = model(adv_x)
 
-    # Calculating train error
+        # Evaluate the accuracy of the MNIST model on adversarial examples
+        eval_par = {'batch_size': batch_size}
+        acc = model_eval(sess, x, y, preds_adv, X_test, Y_test, args=eval_par)
+        print('Test accuracy on adversarial examples: %0.4f\n' % acc)
+        report.clean_train_adv_eval = acc
+
+    print("BasicIterativeMethod")
+    fgsm = BasicIterativeMethod(wrap, sess=sess)
+
+    def attack_BasicIterativeMethod(epsilon = 0.3, eps_iter = 0.05, nb_iter = 10, order = np.inf):
+        print("epsilon = %.3f, eps_iter = %.3f, nb_iter = %d, ord = %s", epsilon, eps_iter, nb_iter, order),
+        fgsm_params = {'eps': epsilon,
+                       'clip_min': 0.,
+                       'clip_max': 1., 
+                       'ord': order, 
+                       'eps_iter': eps_iter,
+                       'nb_iter': nb_iter}
+        adv_x = fgsm.generate(x, **fgsm_params)
+        adv_x = tf.stop_gradient(adv_x)
+        preds_adv = model(adv_x)
+
+        # save image
+        '''print("adv_x:", adv_x.shape)
+        with sess.as_default():
+            adv_image = adv_x.eval(feed_dict={x: X_train, y: Y_train})
+        print("adv_image:", adv_image.shape)
+        np.save("adv_image_BasicIterative", adv_image)
+        print(adv_image[0][0:10])
+        from array_to_image import array_to_image
+        array_to_image(adv_image[0:5], "mnist_BasicIterative")
+        '''
+
+        # Evaluate the accuracy of the MNIST model on adversarial examples
+        eval_par = {'batch_size': batch_size}
+        acc = model_eval(sess, x, y, preds_adv, X_test, Y_test, args=eval_par)
+        print('Test accuracy on adversarial examples: %0.4f\n' % acc)
+        report.clean_train_adv_eval = acc
+    
+    for epsilon, order in zip([0.005, 0.01, 0.05, 0.1, 0.5, 1.0, 0.5, 1.0], [np.inf, np.inf, np.inf, np.inf, np.inf, np.inf, 2, 2]):
+        attack_BasicIterativeMethod(epsilon = epsilon, order = order)
+    for eps_iter in [0.005, 0.01, 0.05, 0.1, 0.5]:
+        attack_BasicIterativeMethod(eps_iter = eps_iter)
+    for nb_iter in [1, 10, 100, 1000]:
+        attack_BasicIterativeMethod(nb_iter = nb_iter)
+        
+    '''# Calculating train error
     if testing:
         eval_par = {'batch_size': batch_size}
         acc = model_eval(sess, x, y, preds_adv, X_train,
                          Y_train, args=eval_par)
-        report.train_clean_train_adv_eval = acc
-    return
+        report.train_clean_train_adv_eval = acc'''
 
     print("Repeating the process, using adversarial training")
     # Redefine TF model graph
     model_2 = cnn_model()
     preds_2 = model_2(x)
     wrap_2 = KerasModelWrapper(model_2)
-    bim2 = BasicIterativeMethod(wrap_2, sess=sess)
-    preds_2_adv = model_2(bim2.generate(x, **fgsm_params))
+    #fgsm2 = FastGradientMethod(wrap_2, sess=sess)
 
-    def evaluate_2():
-        # Accuracy of adversarially trained model on legitimate test inputs
-        eval_params = {'batch_size': batch_size}
-        accuracy = model_eval(sess, x, y, preds_2, X_test, Y_test,
-                              args=eval_params)
-        print('Test accuracy on legitimate examples: %0.4f' % accuracy)
-        report.adv_train_clean_eval = accuracy
+    def adversarial_training(epsilon = 0.3, eps_iter = 0.05, nb_iter = 10, order = np.inf):
+        bim2 = BasicIterativeMethod(wrap_2, sess=sess)
+        preds_2_adv = model_2(bim2.generate(x, **fgsm_params))
 
-        # Accuracy of the adversarially trained model on adversarial examples
-        accuracy = model_eval(sess, x, y, preds_2_adv, X_test,
-                              Y_test, args=eval_params)
-        print('Test accuracy on adversarial examples: %0.4f' % accuracy)
-        report.adv_train_adv_eval = accuracy
+        def evaluate_2():
+            # Accuracy of adversarially trained model on legitimate test inputs
+            eval_params = {'batch_size': batch_size}
+            accuracy = model_eval(sess, x, y, preds_2, X_test, Y_test,
+                                  args=eval_params)
+            print('Test accuracy on legitimate examples: %0.4f' % accuracy)
+            report.adv_train_clean_eval = accuracy
 
-    # Perform and evaluate adversarial training
-    model_train(sess, x, y, preds_2, X_train, Y_train,
-                predictions_adv=preds_2_adv, evaluate=evaluate_2,
-                args=train_params, save=False, rng=rng)
+            # Accuracy of the adversarially trained model on adversarial examples
+            accuracy = model_eval(sess, x, y, preds_2_adv, X_test,
+                                  Y_test, args=eval_params)
+            print('Test accuracy on adversarial examples: %0.4f' % accuracy)
+            report.adv_train_adv_eval = accuracy
 
-    # Calculate training errors
+        # Perform and evaluate adversarial training
+        model_train(sess, x, y, preds_2, X_train, Y_train,
+                    predictions_adv=preds_2_adv, evaluate=evaluate_2,
+                    args=train_params, save=False, rng=rng)
+
+    for epsilon, order in zip([0.005, 0.01, 0.05, 0.1, 0.5, 1.0, 0.5, 1.0], [np.inf, np.inf, np.inf, np.inf, np.inf, np.inf, 2, 2]):
+        adversarial_training(epsilon = epsilon, order = order)
+    for eps_iter in [0.005, 0.01, 0.05, 0.1, 0.5]:
+        adversarial_training(eps_iter = eps_iter)
+    for nb_iter in [1, 10, 100, 1000]:
+        adversarial_training(nb_iter = nb_iter)
+
+    '''# Calculate training errors
     if testing:
         eval_params = {'batch_size': batch_size}
         accuracy = model_eval(sess, x, y, preds_2, X_train, Y_train,
@@ -221,22 +283,22 @@ def mnist_tutorial(train_start=0, train_end=60000, test_start=0,
         report.train_adv_train_clean_eval = accuracy
         accuracy = model_eval(sess, x, y, preds_2_adv, X_train,
                               Y_train, args=eval_params)
-        report.train_adv_train_adv_eval = accuracy
+        report.train_adv_train_adv_eval = accuracy'''
 
     return report
 
 
 def main(argv=None):
+    load_model = False
     mnist_tutorial(nb_epochs=FLAGS.nb_epochs,
                        batch_size=FLAGS.batch_size,
                        learning_rate=FLAGS.learning_rate,
                        train_dir=FLAGS.train_dir,
                        filename=FLAGS.filename,
-                       load_model=FLAGS.load_model, 
-                       epsilon=epsilon)
+                       load_model=load_model)
 
 if __name__ == '__main__':
-    flags.DEFINE_integer('nb_epochs', 30, 'Number of epochs to train model')
+    flags.DEFINE_integer('nb_epochs', 50, 'Number of epochs to train model')
     flags.DEFINE_integer('batch_size', 128, 'Size of training batches')
     flags.DEFINE_float('learning_rate', 0.001, 'Learning rate for training')
     flags.DEFINE_string('train_dir', 'tmp', 'Directory where to save model.')
